@@ -52,7 +52,7 @@ async def select(sql, args, size=None):
         return rs
 
 #execute函数，用于执行INSERT, UPDATE, DELETE语句，三者所需参数相同
-async def execute(sql, args):
+async def execute(sql, args, autocommit=True):
     log(sql)
     async with __pool.get() as conn:
         if not autocommit:
@@ -137,6 +137,7 @@ class ModelMetaclass(type):
             return type.__new__(cls, name, bases, attrs)
         #print('after Model>>>%s' % name)
         #获取数据库表名，若当前类中未定义__table__属性，则将类名作为表名
+        #print(attrs.get('__table__', None))
         tableName = attrs.get('__table__', None) or name
         logging.info('found model: %s (table: %s)' % (name, tableName))
         mappings = dict()    #创建字典，用于储存类属性与数据库表中列的映射关系
@@ -304,3 +305,4 @@ class Model(dict, metaclass=ModelMetaclass):
         rows = await execute(self.__dalete__, args)
         if rows != 1:
             logging.warn('failed to remove by primary key: affected rows: %s' % rows)
+
