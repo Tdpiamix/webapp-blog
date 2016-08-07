@@ -79,21 +79,21 @@ async def response_factory(app, handler):
                 resp.content_type = 'application/json;charset=utf-8'
                 return resp
             else:
-                resp = web.Reponse(body=app['__templating__'].get_template(template).render(**r).encode('utf-8'))
+                resp = web.Response(body=app['__templating__'].get_template(template).render(**r).encode('utf-8'))
                 resp.content_type = 'text/html;charset=utf-8'
                 return resp
-            if isinstance(r, int) and r >= 100 and r < 600:
-                return web.Response(r)
-            if isinstance(r, tuple) and len(r) == 2:
-                t, m = r
-                if isinstance(t, int) and t >= 100 and t < 600:
-                    return web.Response(t, str(m))
-            resp = web.Response(body=str(r).encode('utf-8'))
-            resp.content_type = 'text/plain;charset=utf-8'
-            return resp
-        return response
+        if isinstance(r, int) and r >= 100 and r < 600:
+            return web.Response(r)
+        if isinstance(r, tuple) and len(r) == 2:
+            t, m = r
+            if isinstance(t, int) and t >= 100 and t < 600:
+                return web.Response(t, str(m))
+        resp = web.Response(body=str(r).encode('utf-8'))
+        resp.content_type = 'text/plain;charset=utf-8'
+        return resp
+    return response
 
-def datetiem_filter(t):
+def datetime_filter(t):
     delta = int(time.time() - t)
     if delta < 60:
         return u'1分钟前'
@@ -115,7 +115,7 @@ def index(request):
     return web.Response(body='你好'.encode('utf-8'), headers={'Content-Type':'text/html; charset=utf-8'})
 
 async def init(loop):
-    await orm.create_pool(loop=loop, host='127.0.0.1', port=3306, user='www', password='www', db='awesome')
+    await orm.create_pool(loop=loop, user='www-data', password='www-data', db='awesome')
     app = web.Application(loop=loop, middlewares=[
         logger_factory, response_factory
     ])    #创建web应用，循环类型为消息循环
@@ -131,3 +131,4 @@ loop.run_until_complete(init(loop))    #执行coroutine
 loop.run_forever()
 
 #run_until_complete和run_forever?
+
