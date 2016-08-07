@@ -15,7 +15,6 @@ from apis import APIError
 
 #此函数将以装饰器的方式给函数添加请求方法和请求路径两个属性，使其附带URL信息
 def get(path):
-
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kw):
@@ -26,7 +25,6 @@ def get(path):
     return decorator
 
 def post(path):
-   
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kw):
@@ -86,7 +84,7 @@ def has_request_arg(fn):
     params = sig.parameters
     found = False
     for name, param in params.items():
-        print('parameters in has_request_arg: %s' % params)
+        #print('parameters in has_request_arg: %s' % params)
         if name == 'request':
             found =True
             continue
@@ -112,7 +110,7 @@ class RequestHandler(object):
 
     #定义__call__()方法后，可将其实例视为函数
     #即x(arg1, arg2...)等同于调用x.__call__(self, arg1, arg2)
-    asnyc def __call__(self, request):
+    async def __call__(self, request):
         kw = None
         #不知道为什么有self._has_named_kw_args还要self._required_kw_args
         if self._has_var_kw_arg or self._has_named_kw_args or self._required_kw_args:
@@ -128,7 +126,7 @@ class RequestHandler(object):
                     #判断JSON对象格式是否正确
                     #JSON对象的类型与python中dict的类型一样
                     if not isinstance(params, dict):
-                        return web.HTTPBadRequest('JSON body must be object.')
+                        return web.HTTPBadRequest('JSON body must be object')
                     kw = params
                 #检查媒体信息是否是表单信息
                 elif ct.startswith('application/x-www-form-urlencoded') or ct.startswith('multipart/form-data'):
