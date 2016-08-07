@@ -6,10 +6,7 @@
 import config_default
 
 class Dict(dict):
-    '''
-    Simple dict but support access as x.y style.
 
-    '''
     def __init__(self, names=(), values=(), **kw):
         super(Dict, self).__init__(**kw)
         for k, v in zip(names, values):
@@ -24,29 +21,33 @@ class Dict(dict):
     def __setattr__(self, key, value):
         self[key] = value
 
+#更改默认配置中需要更改的地方
 def merge(defaults, override):
     r = {}
+    #将配置数据名与数据值分开
     for k, v in defaults.items():
+        #若数据名出现在override中，检查其是否是字典
         if k in override:
+            #若是将其交给merge函数再次拆分
             if isinstance(v, dict):
                 r[k] = merge(v, override[k])
+            #否则，储存到r中
             else:
                 r[k] = override[k]
         else:
             r[k] = v
     return r
 
+#将更改后的配置数据传入自定义字典中
 def toDict(d):
     D = Dict()
     for k, v in d.items():
         D[k] = toDict(v) if isinstance(v, dict) else v
     return D
 
-configs = config_default.configs
-
 try:
     import config_override
-    configs = merge(configs, config_override,.configs)
+    configs = merge(config_default.configs, config_override,.configs)
 except ImportError:
     pass
 
