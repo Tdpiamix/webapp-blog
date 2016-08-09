@@ -126,23 +126,23 @@ class RequestHandler(object):
         #不知道为什么有self._has_named_kw_args还要self._required_kw_args
         if self._has_var_kw_arg or self._has_named_kw_args or self._required_kw_args:
             if request.method == 'POST':
-                #检查请求中是否包含媒体类型信息
+                #检查请求中是否包含消息主体类型
                 if not request.content_type:
                     return web.HTTPBadRequest('Missing Content-Type')
                 ct = request.content_type.lower()
-                #检查媒体信息是否是JSON对象
+                #检查消息主体是否是JSON对象
                 if ct.startswith('application/json'):
-                    #request.json()作用是读取request body, 并以json格式解码
+                    #request.json()作用是读取request body, 并进行解码
                     params = await request.json()
                     #判断JSON对象格式是否正确
-                    #JSON对象的类型与Python中dict的类型一样
+                    #JSON的object类型解码后为Python的dict类型
                     if not isinstance(params, dict):
                         return web.HTTPBadRequest('JSON body must be object')
                     kw = params
                     
                     logging.info('——————RequestHandler()->JSON->kw: %s' % kw)
 
-                #检查媒体信息是否是表单信息
+                #检查消息主体是否是表单信息
                 elif ct.startswith('application/x-www-form-urlencoded') or ct.startswith('multipart/form-data'):
                     #request.post()从request body读取POST参数,即表单信息
                     params = await request.post()
@@ -248,3 +248,4 @@ def add_routes(app, module_name):
             path = getattr(fn, '__route__', None)
             if method and path:
                 add_route(app, fn)
+   
