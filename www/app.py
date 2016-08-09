@@ -97,7 +97,7 @@ def datetime_filter(t):
     delta = int(time.time() - t)
     if delta < 60:
         return u'1分钟前'
-    if delte < 3600:
+    if delta < 3600:
         return u'%s分钟前' % (delta // 60)
     if delta < 86400:
         return u'%s小时前' % (delta //3600)
@@ -105,14 +105,6 @@ def datetime_filter(t):
         return u'%s天前' % (delta // 86400)
     dt = datetime.fromtimestamp(t)
     return u'%s年%s月%s日' % (dt.year, dt.month, dt.day)
-
-
-#URL处理函数
-def index(request):
-    #Python的字符串类型是str，在内存中以Unicode表示，若要在网络上传输，或者保存到磁盘上，就需要把str变为以字节为单位的bytes
-    #return web.Response(body=b'<h1>Awesome</h1>')
-    #要显示中文内容可将含有中文的str用utf-8编码为bytes
-    return web.Response(body='你好'.encode('utf-8'), headers={'Content-Type':'text/html; charset=utf-8'})
 
 async def init(loop):
     await orm.create_pool(loop=loop, user='www-data', password='www-data', db='awesome')
@@ -131,4 +123,3 @@ loop.run_until_complete(init(loop))    #执行coroutine
 loop.run_forever()
 
 #run_until_complete和run_forever?
-
