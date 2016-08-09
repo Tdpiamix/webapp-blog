@@ -17,7 +17,7 @@ def index(request):
 
 async def init(loop):
     app = web.Application(loop=loop)    #创建web应用，循环类型为消息循环
-    app.router.add_route('GET', '/', index)    #添加URL处理函数
+    app.router.add_route('GET', '/', index)    #注册URL处理函数
     srv = await loop.create_server(app.make_handler(), '127.0.0.1', 9000)         #创建TCP服务
     logging.info('server started at http://127.0.0.1:9000...')
     return srv
