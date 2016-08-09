@@ -131,13 +131,15 @@ class ModelMetaclass(type):
     #__init__()在创建完对象后调用，对当前类的实例进行初始化,第一个参数self即__new__()返回的实例
     def __new__(cls, name, bases, attrs):
         #排除对Model类本身的修改,其作用是被继承,不存在与数据库表的映射
-        #print('after __new__>>>%s' % name)
+
+        logging.info('——————Metaclass()-> __new__()->name: %s' % name)
+
         if name =='Model':
-            #print('Model>>>%s' % name)
             return type.__new__(cls, name, bases, attrs)
-        #print('after Model>>>%s' % name)
         #获取数据库表名，若当前类中未定义__table__属性，则将类名作为表名
-        #print(attrs.get('__table__', None))
+
+        print('——————',attrs.get('__table__', None))
+
         tableName = attrs.get('__table__', None) or name
         logging.info('found model: %s (table: %s)' % (name, tableName))
         mappings = dict()    #创建字典，用于储存类属性与数据库表中列的映射关系
@@ -229,6 +231,9 @@ class Model(dict, metaclass=ModelMetaclass):
         if where:
             sql.append('where')
             sql.append(where)
+
+            logging.info('——————Model()->findAll()->where: %s' % where)
+             
         if args is None:
             args = []
         #若有orderBy子句，将'order by'字符串和orderBy参数加入SELECT语句
@@ -236,6 +241,9 @@ class Model(dict, metaclass=ModelMetaclass):
         if orderBy:
             sql.append('order by')
             sql.append(orderBy)
+
+            logging.info('——————Model()->findAll()->orderBy: %s' % orderBy)
+            
         #若有limit子句，将'limit'字符串加入SELECT语句
         limit = kw.get('limit', None)
         if limit is not None:
@@ -251,7 +259,9 @@ class Model(dict, metaclass=ModelMetaclass):
                 raise ValueError('Invalid limit value: %s' % str(limit))
         #执行SELECT语句
         rs = await select(' '.join(sql), args)
-        #logging.info('rs in findAll(): %s' % rs)
+
+        logging.info('——————Model()->findAll()->rs: %s' % rs)
+
         #返回查询结果
         return [cls(**r) for r in rs]
 
@@ -259,13 +269,18 @@ class Model(dict, metaclass=ModelMetaclass):
     @classmethod
     async def findNumber(cls, selectField, where=None, args=None):
         #selectField参数传入的就是count子句？
-        #_num_有是什么，要查询的列名？
+        #_num_又是什么，要查询的列名？
+
+        logging.info('——————Model()->findNumber()->selectField: %s' % selectField)
+        
         sql = ['select %s _num_ from `%s` ' % (selectField, cls.__table__)]
         if where:
             sql.append('where')
             sql.append(where)
         rs = await select(' '.join(sql), args, 1)
-        #logging.info('rs in findNumber(): %s' % rs)
+
+        logging.info('——————Model()->findNumber()->rs: %s' % rs)
+
         if len(rs) == 0:
             return None
         #
@@ -275,7 +290,9 @@ class Model(dict, metaclass=ModelMetaclass):
     @classmethod
     async def find(cls, pk):
         rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
-        #logging.info('rs in find(): %s' % rs)
+
+        logging.info('——————Model()->find()->rs: %s' % rs)
+
         if len(rs) == 0:
             return None
         return cls(**rs[0])
