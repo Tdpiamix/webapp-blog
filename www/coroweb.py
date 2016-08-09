@@ -84,12 +84,11 @@ def has_request_arg(fn):
     params = sig.parameters
     found = False
     for name, param in params.items():
-        #print('parameters in has_request_arg: %s' % params)
         if name == 'request':
             found =True
             continue
         #找到名为的request形参后，判断下一个形参类型
-        #request必须是最后一个指定的形参
+        #request必须是最后一个指定的形参？？？
         if found and (param.kind != inspect.Parameter.VAR_POSITIONAL and param.kind != inspect.Parameter.KEYWORD_ONLY and param.kind != inspect.Parameter.VAR_KEYWORD):
             raise ValueError('request parameter must be the last named parameter in function: %s%s' % (fn.__name__, str(sig)))
     return found
@@ -108,6 +107,18 @@ class RequestHandler(object):
         self._named_kw_args = get_named_kw_args(fn)
         self._required_kw_args = get_required_kw_args(fn)
 
+        logging.info('——————RequestHandler()->self._func: %s' % self._func)
+        if self._named_kw_args:
+            logging.info('——————RequestHandler()->self._named_kw_args: %s' % self._named_kw_args)
+        if self._required_kw_args:
+            logging.info('——————RequestHandler()->self._required_kw_args: %s' % self._required_kw_args)
+        if self._has_request_arg:
+            logging.info('——————RequestHandler()->self._has_request_arg: %s' % self._has_request_arg)
+        if self._has_var_kw_arg:
+            logging.info('——————RequestHandler()->self._has_var_kw_arg: %s' % self._has_var_kw_arg)
+        if self._has_named_kw_args:
+            logging.info('——————RequestHandler()->self._has_named_kw_args: %s' % self._has_named_kw_args)
+
     #定义__call__()方法后，可将其实例视为函数
     #即x(arg1, arg2...)等同于调用x.__call__(self, arg1, arg2)
     async def __call__(self, request):
@@ -115,41 +126,52 @@ class RequestHandler(object):
         #不知道为什么有self._has_named_kw_args还要self._required_kw_args
         if self._has_var_kw_arg or self._has_named_kw_args or self._required_kw_args:
             if request.method == 'POST':
-                #检查请求中是否包含媒体类型信息
+                #检查请求中是否包含消息主体类型
                 if not request.content_type:
                     return web.HTTPBadRequest('Missing Content-Type')
                 ct = request.content_type.lower()
-                #检查媒体信息是否是JSON对象
+                #检查消息主体是否是JSON对象
                 if ct.startswith('application/json'):
-                    #request.json()作用是读取request body, 并以json格式解码
+                    #request.json()作用是读取request body, 并进行解码
                     params = await request.json()
                     #判断JSON对象格式是否正确
-                    #JSON对象的类型与python中dict的类型一样
+                    #JSON的object类型解码后为Python的dict类型
                     if not isinstance(params, dict):
                         return web.HTTPBadRequest('JSON body must be object')
                     kw = params
-                #检查媒体信息是否是表单信息
+                    
+                    logging.info('——————RequestHandler()->JSON->kw: %s' % kw)
+
+                #检查消息主体是否是表单信息
                 elif ct.startswith('application/x-www-form-urlencoded') or ct.startswith('multipart/form-data'):
                     #request.post()从request body读取POST参数,即表单信息
                     params = await request.post()
                     kw = dict(**params)
+
+                    logging.info('——————RequestHandler()->x-www-form-urlencoded->kw: %s' % kw)
+                    
                 else:
                     return web.HTTPBadRequest('Unsupported Content-Type: %s' % request.content_type)
             if request.method == 'GET':
                 qs = request.query_string
                 #检查请求路径中是否有查询字符串
-                #如https://www.baidu.com/s?ie=utf-8中，'?'后面的就是查询字符串，变量名为ie，其值为utf-8
+                #如https://www.baidu.com/s?ie=utf-8中，'?'后面的就是查询字符串，其变量名为ie，值为utf-8
                 if qs:
                     kw = dict()
                     #parse.parse_qs()，以字典形式返回查询字符串中的数据，'True'表示保留空白字符串
                     #返回字典的值是一个列表，将其第一个元素与变量名重组
-                    #logging.info('parse_qs(): %s' % parse.parse_qs(qs. True).items())
+
+                    logging.info('——————RequestHandler()->parse.parse_qs(): %s' % parse.parse_qs(qs, True))
+
                     for k, v in parse.parse_qs(qs, True).items():
                         kw[k] = v[0]
         #经过以上处理，kw仍为空,则获取请求的抽象匹配信息
         #不知道具体是什么，大概是根据URL参数返回文本
         if kw is None:
             kw = dict(**request.match_info)
+
+            logging.info('——————RequestHandler()->request.match_info: %s' % kw)
+            
         else:
             if not self._has_var_kw_arg and self._named_kw_args:
                 #移除所有未指定的参数
@@ -177,7 +199,7 @@ class RequestHandler(object):
         except APIError as e:
             return dict(error=e.error, data=e.data, message=e.message)
 
-#添加静态文件的路径
+#添加静态文件
 def add_static(app):
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
     app.router.add_static('/static/', path)
@@ -196,8 +218,11 @@ def add_route(app, fn):
     #注册URL处理函数
     app.router.add_route(method, path, RequestHandler(app, fn))
 
-#把多次add_route()注册的调用，变成自动扫描
+#把多次URL处理函数的注册，变成自动扫描注册
 def add_routes(app, module_name):
+
+    logging.info('——————add_routes()->module_name: %s' % module_name)
+
     #rfind()，返回字符串最后一次出现的位置，如果没有匹配项则返回-1
     n = module_name.rfind('.')
     #若未匹配到，即module_name在当前目录下，直接导入
@@ -205,18 +230,22 @@ def add_routes(app, module_name):
     if n == (-1):
         mod = __import__(module_name, globals(), locals())
     else:
-        #name为'.'号后的子模块
+        #将'.'号后的子模块名赋值给name
         name = module_name[n+1:]
         #为什么要getattr()?
         mod = getattr(__import__(module_name[:n], globals(), locals(), [name]), name)
+
+        logging.info('——————add_routes()->mod: %s' % mod)
+        
     for attr in dir(mod):
         #排除私有属性
         if attr.startswith('_'):
             continue
         fn = getattr(mod, attr)
+        #若模块属性可调用(即为函数)，且有method和path两个属性，即为URL处理函数，进行注册
         if callable(fn):
             method = getattr(fn, '__method__', None)
             path = getattr(fn, '__route__', None)
             if method and path:
                 add_route(app, fn)
-                
+   
