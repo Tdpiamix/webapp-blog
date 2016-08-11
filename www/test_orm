@@ -7,7 +7,7 @@ from models import User, Blog, Comment
 
 async def test():
       await orm.create_pool(user='www-data', password='www-data', db='awesome', loop=loop)
-      u = User(name='Test03', email='Test03@example.com', passwd='test0323456', image='about:blank')
+      u = User(name='Test01', email='Test01@example.com', passwd='test0123456', image='about:blank')
       await u.save()
 
 loop = asyncio.get_event_loop()
