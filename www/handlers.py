@@ -9,6 +9,17 @@ from coroweb import get, post
 
 from models import User, Comment, Blog, next_id
 
+def get_page_index(page_str):
+    p = 1
+    try:
+        p = int(page_str)
+    except ValueError as e:
+        pass
+    if p < 1:
+        p = 1
+    return p
+
+
 @get('/')
 def index(request):
     summary = 'Lorem ipsum dolor sit amet, consectetur asupisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
@@ -21,3 +32,10 @@ def index(request):
         '__template__': 'blogs.html',
         'blogs': blogs
     }
+
+@get('/api/users')
+def api_get_users():
+    users = yield from User.findAll(orderBy='created_at desc')
+    for u in users:
+        u.passwd = '******'
+    return dict(users=users)
