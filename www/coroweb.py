@@ -213,6 +213,9 @@ def add_route(app, fn):
         raise ValueError('@get or @post not defined in %s.' % str(fn))
     #若函数既不是协程也不是生成器，则将其变成协程
     if not asyncio.iscoroutinefunction(fn) and not inspect.isgeneratorfunction(fn):
+        #这里检测的是是否通过@asyncio.coroutine装饰得到的生成器，async def定义的结果为False，不知道为什么
+        logging.info('——————add_route()-> not coroutine function')
+
         fn = asyncio.coroutine(fn)
     logging.info('add route %s %s => %s(%s)' % (method, path, fn.__name__, ','.join(inspect.signature(fn).parameters.keys())))
     #注册URL处理函数
@@ -248,4 +251,4 @@ def add_routes(app, module_name):
             path = getattr(fn, '__route__', None)
             if method and path:
                 add_route(app, fn)
-   
+                
