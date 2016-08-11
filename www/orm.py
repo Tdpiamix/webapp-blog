@@ -225,7 +225,14 @@ class Model(dict, metaclass=ModelMetaclass):
     #类方法既可以直接类调用(C.f())，也可以进行实例调用(C().f())
     @classmethod
     #对默认SELECT语句的补充，可实现根据WHERE条件查找
-    async def findAll(cls, where=None, args=None, **kw):
+
+    #此处用@asyncio.coroutine而不是async
+    #因为URL处理函数是统一用@asyncio.coroutine装饰的
+    #其中的yield from对象也必须是通过@asyncio.coroutine装饰的，否则会报错
+    #cannot 'yield from' a coroutine object in a non-coroutine generator
+    @asyncio.coroutine
+    def findAll(cls, where=None, args=None, **kw):
+        
         sql = [cls.__select__]
         #若有where子句，将'where'字符串和where参数加入SELECT语句
         if where:
@@ -258,7 +265,7 @@ class Model(dict, metaclass=ModelMetaclass):
             else:
                 raise ValueError('Invalid limit value: %s' % str(limit))
         #执行SELECT语句
-        rs = await select(' '.join(sql), args)
+        rs = yield from select(' '.join(sql), args)
 
         logging.info('——————Model()->findAll()->rs: %s' % rs)
 
