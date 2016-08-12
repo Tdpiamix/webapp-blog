@@ -108,10 +108,15 @@ class RequestHandler(object):
         self._required_kw_args = get_required_kw_args(fn)
 
         logging.info('——————RequestHandler()->self._func: %s' % self._func)
+        #self._named_kw_args为元组，格式化时要传入与元素数量相等的占位符,这里直接拼接了
+        #直接拼接会报错，logging内部错误，占位符合提供的参数数量不等，但信息仍会以
+        #Message: '——————RequestHandler()->self._named_kw_args:'
+        #Arguments: ('email,passwd',)
+        #形式打印出来
         if self._named_kw_args:
-            logging.info('——————RequestHandler()->self._named_kw_args: %s' % self._named_kw_args)
+            print('——————RequestHandler()->self._named_kw_args:', self._named_kw_args)
         if self._required_kw_args:
-            logging.info('——————RequestHandler()->self._required_kw_args: %s' % self._required_kw_args)
+            print('——————RequestHandler()->self._required_kw_args:', self._required_kw_args)
         if self._has_request_arg:
             logging.info('——————RequestHandler()->self._has_request_arg: %s' % self._has_request_arg)
         if self._has_var_kw_arg:
@@ -251,3 +256,9 @@ def add_routes(app, module_name):
             path = getattr(fn, '__route__', None)
             if method and path:
                 add_route(app, fn)
+                
+        
+        
+                  
+                    
+    

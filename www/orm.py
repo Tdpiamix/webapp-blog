@@ -131,9 +131,6 @@ class ModelMetaclass(type):
     #__init__()在创建完对象后调用，对当前类的实例进行初始化,第一个参数self即__new__()返回的实例
     def __new__(cls, name, bases, attrs):
         #排除对Model类本身的修改,其作用是被继承,不存在与数据库表的映射
-
-        logging.info('——————Metaclass()-> __new__()->name: %s' % name)
-
         if name =='Model':
             return type.__new__(cls, name, bases, attrs)
         #获取数据库表名，若当前类中未定义__table__属性，则将类名作为表名
@@ -267,7 +264,7 @@ class Model(dict, metaclass=ModelMetaclass):
         #执行SELECT语句
         rs = yield from select(' '.join(sql), args)
 
-        logging.info('——————Model()->findAll()->rs: %s' % rs)
+        print('——————Model()->findAll()->rs:', rs)
 
         #返回查询结果
         return [cls(**r) for r in rs]
@@ -305,12 +302,13 @@ class Model(dict, metaclass=ModelMetaclass):
         return cls(**rs[0])
 
     #将实例的数据存入数据库
-    async def save(self):
+    @asyncio.coroutine
+    def save(self):
         #将除主键外的实例属性的值存入args列表
         args = list(map(self.getValueOrDefault, self.__fields__))
         #将主键的实例属性的值存入args列表
         args.append(self.getValueOrDefault(self.__primary_key__))
-        rows = await execute(self.__insert__, args)
+        rows = yield from execute(self.__insert__, args)
         #一个实例只能插入一行数据，若返回的影响行数不为1，报错
         if rows != 1:
             logging.warn('failed to insert record: affected rows: %s' % rows)
