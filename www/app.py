@@ -66,17 +66,20 @@ async def logger_factory(app, handler):
         return (await handler(request))
     return logger
 
-#
+#在处理URL请求前，解析出用户信息并绑定到request中
 async def auth_factory(app, handler):
     async def auth(request):
         logging.info('check user: %s %s' % (request.method, request.path))
         request.__user__ = None
         cookie_str = request.cookies.get(COOKIE_NAME)
+        #若存在cookie，解析用户信息
         if cookie_str:
             user = await cookie2user(cookie_str)
+            #若有用户信息，将其息绑定到request中，没有则表明cookie是伪造的
             if user:
                 logging.info('set current user: %s' % user.email)
                 request.__user__ = user
+        #若请求路径是管理页面，但用户信息不存在或不是管理员，则无法操作，跳转到登录页面
         if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
             return web.HTTPFound('/signin')
         return (await handler(request))
@@ -191,3 +194,4 @@ loop.run_until_complete(init(loop))    #执行coroutine
 loop.run_forever()
 
 #run_until_complete和run_forever?
+
