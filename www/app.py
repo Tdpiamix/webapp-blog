@@ -79,8 +79,8 @@ async def auth_factory(app, handler):
             if user:
                 logging.info('set current user: %s' % user.email)
                 request.__user__ = user
-        #若请求路径是管理页面，但用户信息不存在或不是管理员，则无法操作，跳转到登录页面
-        if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
+        #若请求路径是管理页面，但用户信息不存在或拥有管理员权限，则无法操作，跳转到登录页面
+        if request.path.startswith('/manage/') and (request.__user__ is None or request.__user__.admin):
             return web.HTTPFound('/signin')
         return (await handler(request))
     return auth
@@ -194,4 +194,3 @@ loop.run_until_complete(init(loop))    #执行coroutine
 loop.run_forever()
 
 #run_until_complete和run_forever?
-
