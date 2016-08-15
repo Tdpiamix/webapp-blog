@@ -5,11 +5,13 @@
 
 import re, time, json, logging, hashlib, base64, asyncio
 
+import markdown2
+
 from aiohttp import web
 
 from coroweb import get, post
 
-from apis import APIError, APIValueError, APIResourceNotFoundError
+from apis import Page, APIError, APIValueError, APIResourceNotFoundError
 
 from models import User, Comment, Blog, next_id
 
@@ -108,7 +110,7 @@ def get_blog(id):
     #数据库中的博客和评论为text类型，将其转换成html
     for c in comments:
         c.html_content = text2html(c.content)
-    blog.html_content = markdown(blog.content)
+    blog.html_content = markdown2.markdown(blog.content)
     return {
         '__template__': 'blog.html',
         'blog': blog,
@@ -140,6 +142,14 @@ def signout(request):
     r.set_cookie(COOKIE_NAME, '-deleted-', max_age=0, httponly=True)
     logging.info('user signed out.')
     return r
+
+#管理博客页
+@get('/manage/blogs')
+def manage_blogs(*, page='1'):
+    return {
+        '__template__': 'manage_blogs.html',
+        'page_index': get_page_index(page)
+    }
 
 #创建博客页
 @get('/manage/blogs/create')
@@ -213,6 +223,16 @@ def api_register_user(*, email, name, passwd):
     r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
     return r
 
+@get('/api/blogs')
+def api_blogs(*, page='1'):
+    page_index = get_page_index(page)
+    num = yield from Blog.findNumber('count(id)')
+    p = Page(num, page_index)
+    if num == 0:
+        return dict(page=0, blogs=())
+    blogs = yield from Blog.findAll(orderBy='created_at desc', limit=(p.offset, p.limit))
+    return dict(page=p, blogs=blogs)
+
 #获取博客
 @get('/api/blogs/{id}')
 def api_get_blog(*, id):
@@ -237,9 +257,9 @@ def api_create_blog(request, *, name, summary, content):
     return blog
 
 #获取用户信息
-@get('/api/users')
-def api_get_users():
-    users = yield from User.findAll(orderBy='created_at desc')
-    for u in users:
-        u.passwd = '******'
-    return dict(users=users)
+#@get('/api/users')
+#def api_get_users():
+#    users = yield from User.findAll(orderBy='created_at desc')
+#    for u in users:
+#       u.passwd = '******'
+#    return dict(users=users)
