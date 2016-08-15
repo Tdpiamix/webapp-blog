@@ -18,6 +18,27 @@ from config import configs
 COOKIE_NAME = 'awesession'
 _COOKIE_KEY = configs.session.secret    #cookie密匙
 
+#匹配邮箱与密码
+_RE_EMAIL = re.compile(r'^[a-z0-9\.\-\_]+\@[a-z0-9\-\_]+(\.[a-z0-9\-\_]+){1,4}$')
+_RE_SHA1 = re.compile(r'^[0-9a-f]{40}$')
+
+#检验用户权限
+def check_admin(request):
+    #若用户信息不存在或者拥有管理员权限，报错
+    if request.__user__ is None or request.__user__.admin:
+        raise APIPermissionError()
+
+#获取页码，检查其合法性
+def get_page_index(page_str):
+    p = 1
+    try:
+        p = int(page_str)
+    except ValueError as e:
+        pass
+    if p < 1:
+        p = 1
+    return p
+
 #根据用户的信息生成cookie
 def user2cookie(user, max_age):
     #设定cookie过期时间，max_age为cookie的有效时间
@@ -27,6 +48,13 @@ def user2cookie(user, max_age):
     #将用户id,过期时间和加密字符串组合成用户cookie
     L = [user.id, expires, hashlib.sha1(s.encode('utf-8')).hexdigest()]
     return '-'.join(L)
+
+#将text转换成html
+def text2html(text):
+    #filter根据函数的返回值选择保留或丢弃元素，此处将空字符丢弃
+    #将对应字符转换成html的格式
+    lines = map(lambda s: '<p>%s</p>' % s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'), filter(lambda s: s.strip() != '', text.split('\n')))
+    return ''.join(lines)
 
 #通过cookie解析出用户信息
 async def cookie2user(cookie_str):
@@ -56,17 +84,6 @@ async def cookie2user(cookie_str):
         logging.exception(e)
         return None
 
-#获取页码，检查其合法性
-def get_page_index(page_str):
-    p = 1
-    try:
-        p = int(page_str)
-    except ValueError as e:
-        pass
-    if p < 1:
-        p = 1
-    return p
-
 #首页
 @get('/')
 def index(request):
@@ -79,6 +96,23 @@ def index(request):
     return {
         '__template__': 'blogs.html',
         'blogs': blogs
+    }
+
+#博客详情页
+@get('/blog/{id}')
+def get_blog(id):
+    #根据id从数据库中获取博客内容
+    blog = yield from Blog.find(id)
+    #根据blog_id获取评论，按评论时间降序排列
+    comments = yield from Comment.findAll('blog_id=?', [id], orderBy='created_at desc')
+    #数据库中的博客和评论为text类型，将其转换成html
+    for c in comments:
+        c.html_content = text2html(c.content)
+    blog.html_content = markdown(blog.content)
+    return {
+        '__template__': 'blog.html',
+        'blog': blog,
+        'comments': comments
     }
 
 #注册页
@@ -94,6 +128,29 @@ def signin():
     return {
         '__template__': 'signin.html'
     }
+
+#注销页
+@get('/signout')
+def signout(request):
+    #获取上一个页面，即从哪个页面链接到当前页面的
+    referer = request.headers.get('Referer')
+    #注销后，自动返回上一个页面或主页
+    r = web.HTTPFound(referer or '/')
+    #清除cookie
+    r.set_cookie(COOKIE_NAME, '-deleted-', max_age=0, httponly=True)
+    logging.info('user signed out.')
+    return r
+
+#创建博客页
+@get('/manage/blogs/create')
+def manage_create_blog():
+    return {
+        '__template__': 'manage_blog_edit.html',
+        'id': '',
+        #在用户提交博客时，将数据post到action指定的路径，此处为
+        'action': '/api/blogs'
+    }
+
 
 #用户登录验证
 @post('/api/authenticate')
@@ -127,25 +184,10 @@ def authenticate(*, email, passwd):
     r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
     return r
 
-#注销页
-@get('/signout')
-def signout(request):
-    #获取上一个页面，即从哪个页面链接到当前页面的
-    referer = request.headers.get('Referer')
-    #注销后，自动返回上一个页面或主页
-    r = web.HTTPFound(referer or '/')
-    #清除cookie
-    r.set_cookie(COOKIE_NAME, '-deleted-', max_age=0, httponly=True)
-    logging.info('user signed out.')
-    return r
-
-#匹配邮箱与密码
-_RE_EMAIL = re.compile(r'^[a-z0-9\.\-\_]+\@[a-z0-9\-\_]+(\.[a-z0-9\-\_]+){1,4}$')
-_RE_SHA1 = re.compile(r'^[0-9a-f]{40}$')
-
-#创建用户
+#用户注册
 @post('/api/users')
 def api_register_user(*, email, name, passwd):
+    #检查注册信息合法性
     if not name or not name.strip():
         raise APIValueError('name')
     if not email or not _RE_EMAIL.match(email):
@@ -156,7 +198,7 @@ def api_register_user(*, email, name, passwd):
     users = yield from User.findAll('email=?', [email])
     if len(users) > 0:
         raise APIError('register:failed', 'email', 'Email is already in use.')
-    #若注册信息无误，生成唯一id
+    #若注册信息合法，生成唯一id
     uid = next_id()
     #对密码进行加密，并将用户信息存入数据库
     #name.strip()，删除用户名前后空格
@@ -171,6 +213,29 @@ def api_register_user(*, email, name, passwd):
     r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
     return r
 
+#获取博客
+@get('/api/blogs/{id}')
+def api_get_blog(*, id):
+    blog = yield from Blog.find(id)
+    return blog
+
+#创建博客
+@post('/api/blogs')
+def api_create_blog(request, *, name, summary, content):
+    #检查用用户权限
+    check_admin(request)
+    #检查博客信息合法性
+    if not name or not name.strip():
+        raise APIValueError('name', 'name cannot be empty.')
+    if not summary or not summary.strip():
+        raise APIValueError('summary', 'summary cannot be empty.')
+    if not content or not content.strip():
+        raise APIValueError('content', 'content cannot be empty.')
+    #将博客信息存入数据库
+    blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name, user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
+    yield from blog.save()
+    return blog
+
 #获取用户信息
 @get('/api/users')
 def api_get_users():
@@ -178,6 +243,3 @@ def api_get_users():
     for u in users:
         u.passwd = '******'
     return dict(users=users)
-
-    
-
