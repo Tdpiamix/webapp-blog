@@ -104,7 +104,7 @@ def get_blog(id):
     #根据id从数据库中获取博客内容
     blog = yield from Blog.find(id)
     #根据blog_id获取评论，按评论时间降序排列
-    comments = yield from Comment.findAll('blog_id=?', [id], orderBy='creater_at desc')
+    comments = yield from Comment.findAll('blog_id=?', [id], orderBy='created_at desc')
     #数据库中的博客和评论为text类型，将其转换成html
     for c in comments:
         c.html_content = text2html(c.content)
