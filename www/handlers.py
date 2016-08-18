@@ -11,7 +11,7 @@ from aiohttp import web
 
 from coroweb import get, post
 
-from apis import Page, APIError, APIValueError, APIResourceNotFoundError
+from apis import Page, APIError, APIValueError, APIPermissionError, APIResourceNotFoundError
 
 from models import User, Comment, Blog, next_id
 
@@ -88,15 +88,20 @@ async def cookie2user(cookie_str):
 
 #首页
 @get('/')
-def index(request):
-    summary = 'Lorem ipsum dolor sit amet, consectetur asupisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
-    blogs = [
-        Blog(id='1', name='Test Blog', summary=summary, created_at=time.time()-120),
-        Blog(id='2', name='Something New', summary=summary, created_at=time.time()-3600),
-        Blog(id='3', name='Learn Swift', summary=summary, created_at=time.time()-7200)
-    ]
+def index(*, page='1'):
+    page_index = get_page_index(page)
+    #获取博客总数
+    num = yield from Blog.findNumber('count(id)')
+    #进行页码相关设置
+    page = Page(num)
+    if num == 0:
+        blogs = []
+    #根据分页情况获取博客内容
+    else:
+        blogs = yield from Blog.findAll(orderBy='created_at desc', limit=(page.offset, page.limit))
     return {
         '__template__': 'blogs.html',
+        'page': page,
         'blogs': blogs
     }
 
@@ -194,6 +199,20 @@ def authenticate(*, email, passwd):
     r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
     return r
 
+@post('/api/blogs/{id}/comments')
+def api_create_comment(id, request, *, content):
+    user = request.__user__
+    if user is None:
+        raise APIPermissionError('Please signin first.')
+    if not content or not content.strip():
+        raise APIValueError('content')
+    blog = yield from Blog.find(id)
+    if blog is None:
+        raise APIResourceNotFoundError('Blog')
+    comment = Comment(blog_id=blog.id, user_id=user.id, user_name=user.name, user_image=user.image, content=content.strip())
+    yield from comment.save()
+    return comment
+
 #用户注册
 @post('/api/users')
 def api_register_user(*, email, name, passwd):
@@ -255,6 +274,23 @@ def api_create_blog(request, *, name, summary, content):
     blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name, user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
     yield from blog.save()
     return blog
+
+@post('/api/blogs/{id}')
+def api_update_blog(id, request, *, name, summary, content):
+    check_admin(request)
+    blog = yield from Blog.find(id)
+    if not name or not name.strip():
+        raise APIValueError('name', 'name cannot be empty.')
+    if not summary or not summary.strip():
+        raise APIValueError('summary', 'summary cannot be empty.')
+    if not content or not content.strip():
+        raise APIValueError('content', 'content cannot be empty.')
+    blog.name = name.strip()
+    blog.summary = summary.strip()
+    blog.content = content.strip()
+    yield from blog.update()
+    return blog
+
 
 #获取用户信息
 #@get('/api/users')
