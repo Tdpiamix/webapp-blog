@@ -88,22 +88,13 @@ async def cookie2user(cookie_str):
 
 #首页
 @get('/')
-def index(*, page='1'):
-    page_index = get_page_index(page)
-    #获取博客总数
-    num = yield from Blog.findNumber('count(id)')
-    #进行页码相关设置
-    page = Page(num)
-    if num == 0:
-        blogs = []
-    #根据分页情况获取博客内容
-    else:
-        blogs = yield from Blog.findAll(orderBy='created_at desc', limit=(page.offset, page.limit))
-    return {
-        '__template__': 'blogs.html',
-        'page': page,
-        'blogs': blogs
-    }
+-def index(request):
+-    summary = 'Lorem ipsum dolor sit amet, consectetur asupisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
+-    blogs = [
+-        Blog(id='1', name='Test Blog', summary=summary, created_at=time.time()-120),
+-        Blog(id='2', name='Something New', summary=summary, created_at=time.time()-3600),
+-        Blog(id='3', name='Learn Swift', summary=summary, created_at=time.time()-7200)
+-    ]
 
 #博客详情页
 @get('/blog/{id}')
