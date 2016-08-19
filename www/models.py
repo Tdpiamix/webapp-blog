@@ -7,9 +7,10 @@ import time, uuid
 
 from orm import Model, StringField, BooleanField, FloatField, TextField
 
-#用当前时间戳与由伪随机数得到的uuid结合生成唯一id，做为数据库表中的主键
+#用当前时间戳与由伪随机数得到的UUID结合生成唯一id，做为数据库表中的主键
 #python的时间戳是浮点数，需乘以1000转化成整数
-#hex(),将一个整数转换为一个十六进制字符串
+#uuid.UUID.hex,生成的UUID为32字符的16进制字符串(我随便翻的，原句在下面)
+#'The UUID as a 32-character hexadecimal string'
 def next_id():
     return '%015d%s000' % (int(time.time() * 1000), uuid.uuid4().hex)
 

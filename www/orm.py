@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-'''ORM，对象关系映射，将关系数据库的一行映射为一个对象'''
+'''ORM，对象关系映射，将关系数据库的一行映射为一个对象,即一个类对应一个表'''
 
 import asyncio, logging
 
@@ -12,11 +12,12 @@ def log(sql, args=()):
 
 #创建全局连接池，每个HTTP请求都能从连接池中直接获取数据库连接
 #避免了频繁地打开或关闭数据库连接
-async def create_pool(loop, **kw):
+@asyncio.coroutine
+def create_pool(loop, **kw):
     logging.info('create database connection pool...')
     #连接池储存于全局变量__pool中
     global __pool
-    __pool = await aiomysql.create_pool( 
+    __pool = yield from aiomysql.create_pool( 
         host=kw.get('host', 'localhost'),    #数据库服务器地址，默认设在本地
         port=kw.get('port', 3306),    #数据库端口， 默认为3306
         user=kw['user'],    #登录名 
@@ -30,47 +31,53 @@ async def create_pool(loop, **kw):
     )
 
 #select函数，用于执行SELECT语句
-async def select(sql, args, size=None):
+@asyncio.coroutine
+def select(sql, args, size=None):
     log(sql, args)
     global __pool
     ########测试async with、yield from、await、__pool########
     #此处不能直接将yield from用await替换
     #通过async with语句可以使得Python程序在进入和退出runtime context（即with）时，执行异步调用
-    async with __pool.get() as conn:
+    #async with __pool.get() as conn:
+    with (yield from __pool) as conn:
         #创建游标，默认以tuple形式返回查询结果，通过aiomysql.DictCursor可使结果以dict形式返回
-        async with conn.cursor(aiomysql.DictCursor) as cur:
+        #async with conn.cursor(aiomysql.DictCursor) as cur:
+        cur = yield from conn.cursor(aiomysql.DictCursor)
             #执行SQL语句，SQL语句的占位符是?，而MySQL的占位符是%s，需替换
             #将args参数添加到SELECT语句中，若没有，则使用默认的SELECT语句
-            await cur.execute(sql.replace('?', '%s'), args or ())
+        yield from cur.execute(sql.replace('?', '%s'), args or ())
             #如果传入size参数，接收size条返回结果行
-            if size:
-                rs = await cur.fetchmany(size)
+        if size:
+            rs = yield from cur.fetchmany(size)
             #否则，接收全部的返回结果行
-            else:
-                rs = await cur.fetchall()
+        else:
+            rs = yield from cur.fetchall()
         logging.info('rows returned: %s' % len(rs))
         return rs
 
 #execute函数，用于执行INSERT, UPDATE, DELETE语句，三者所需参数相同
-async def execute(sql, args, autocommit=True):
+@asyncio.coroutine
+def execute(sql, args, autocommit=True):
     log(sql)
-    async with __pool.get() as conn:
+    #async with __pool.get() as conn:
+    with (yield from __pool) as conn:
         if not autocommit:
             #begin()是什么意思？
-            await conn.begin()
+            yield from conn.begin()
         try:
             ########测试conn.cursor()########
-            async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute(sql.replace('?', '%s'), args)
+            #async with conn.cursor(aiomysql.DictCursor) as cur:
+            cur = yield from conn.cursor()
+            yield from cur.execute(sql.replace('?', '%s'), args)
                 #获取执行影响的行数
-                affected = cur.rowcount
+            affected = cur.rowcount
             #若没有自动提交，则手动提交事务
             if not autocommit:
-                await conn.commit()
+                yield from conn.commit()
         except BaseException as e:
             #若没有自动提交，则回滚到语句被执行之前
             if not autocommit:
-                await conn.rollback()
+                yield from conn.rollback()
             raise
         return affected
 
@@ -115,7 +122,7 @@ class BooleanField(Field):
 
 class FloatField(Field):
 
-    def __init__(self,name=None, primary_key=False, default=0.0):
+    def __init__(self, name=None, primary_key=False, default=0.0):
         super().__init__(name, 'real', primary_key, default)
 
 class TextField(Field):
@@ -135,7 +142,7 @@ class ModelMetaclass(type):
             return type.__new__(cls, name, bases, attrs)
         #获取数据库表名，若当前类中未定义__table__属性，则将类名作为表名
 
-        print('——————',attrs.get('__table__', None))
+        #print('——————',attrs.get('__table__', None))
 
         tableName = attrs.get('__table__', None) or name
         logging.info('found model: %s (table: %s)' % (name, tableName))
@@ -159,7 +166,7 @@ class ModelMetaclass(type):
                     fields.append(k)
         #若未找到主键，同样报错
         if not primaryKey:
-            raise RuntimeError('PrimaryKey not found.')
+            raise RuntimeError('Primary key not found')
         #将已存入映射关系字典中的属性从类属性中删除，防止实例属性遮盖类的同名属性，造成运行时错误
         for k in mappings.keys():
             attrs.pop(k)
@@ -268,10 +275,10 @@ class Model(dict, metaclass=ModelMetaclass):
 
         #返回查询结果
         return [cls(**r) for r in rs]
-
     #实现根据WHERE条件查找，但返回的是查询结果的数目，适用于SELECT COUNT(*)语句
     @classmethod
-    async def findNumber(cls, selectField, where=None, args=None):
+    @asyncio.coroutine
+    def findNumber(cls, selectField, where=None, args=None):
         #selectField参数传入的就是count子句？
         #_num_又是什么，要查询的列名？
 
@@ -281,9 +288,9 @@ class Model(dict, metaclass=ModelMetaclass):
         if where:
             sql.append('where')
             sql.append(where)
-        rs = await select(' '.join(sql), args, 1)
+        rs = yield from select(' '.join(sql), args, 1)
 
-        logging.info('——————Model()->findNumber()->rs: %s' % rs)
+        print('——————Model()->findNumber()->rs:', rs)
 
         if len(rs) == 0:
             return None
@@ -292,10 +299,11 @@ class Model(dict, metaclass=ModelMetaclass):
 
     #实现根据主键查找
     @classmethod
-    async def find(cls, pk):
-        rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
+    @asyncio.coroutine
+    def find(cls, pk):
+        rs = yield from select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
 
-        logging.info('——————Model()->find()->rs: %s' % rs)
+        print('——————Model()->find()->rs:', rs)
 
         if len(rs) == 0:
             return None
@@ -314,16 +322,18 @@ class Model(dict, metaclass=ModelMetaclass):
             logging.warn('failed to insert record: affected rows: %s' % rows)
 
     #数据的更新
-    async def update(self):
+    @asyncio.coroutine
+    def update(self):
         args = list(map(self.getValue, self.__fields__))
         args.append(self.getValue(self.__primary_key__))
-        rows = await execute(self.__update__, args)
+        rows = yield from execute(self.__update__, args)
         if rows != 1:
             logging.warn('failed to update by primary key: affected rows: %s' % rows)
 
     #数据的删除
-    async def remove(self):
+    @asyncio.coroutine
+    def remove(self):
         args = [self.getValue(self.__primary_key__)]
-        rows = await execute(self.__dalete__, args)
+        rows = yield from execute(self.__delete__, args)
         if rows != 1:
             logging.warn('failed to remove by primary key: affected rows: %s' % rows)

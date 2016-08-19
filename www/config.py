@@ -1,4 +1,4 @@
-#!usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 '''配置文件的处理'''
@@ -20,25 +20,26 @@ class Dict(dict):
 
     def __setattr__(self, key, value):
         self[key] = value
-
-#修改默认配置中需要更改的地方
+        
+#要修改数据库配置信息时，在自定义配置(config_override)中设置
+#然后用自定义配置中的数据覆盖默认配置中的对应数据
 def merge(defaults, override):
     r = {}
-    #配置数据以字典形式储存，将其键值对拆分开
+    #配置信息以字典形式储存，将其键值对拆分开
     for k, v in defaults.items():
-        #若数据名出现在override中，检查其是否是字典
+        #若某项数据出现在自定义配置中，检查其是否是字典
         if k in override:
             #若是将其交给merge函数再次拆分
             if isinstance(v, dict):
                 r[k] = merge(v, override[k])
-            #否则，储存到r中
+            #用该数据覆盖默认配置中的对应数据
             else:
                 r[k] = override[k]
         else:
             r[k] = v
     return r
 
-#将更改后的配置数据传入自定义字典中
+#将修改后的配置信息转换成自定义字典
 def toDict(d):
     D = Dict()
     for k, v in d.items():
@@ -47,7 +48,7 @@ def toDict(d):
 
 try:
     import config_override
-    configs = merge(config_default.configs, config_override,.configs)
+    configs = merge(config_default.configs, config_override.configs)
 except ImportError:
     pass
 

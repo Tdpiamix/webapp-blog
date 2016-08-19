@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-'''web app骨架'''
+'''Web App'''
 
 import logging; logging.basicConfig(level=logging.INFO)
 
@@ -57,24 +57,28 @@ def init_jinja2(app, **kw):
 #在一个URL被某个函数处理前，可经过middleware改变输入输出
 
 #此函数的作用是在处理URL请求前，将请求方法和路径记录下来
-async def logger_factory(app, handler):
+@asyncio.coroutine
+def logger_factory(app, handler):
 
     logging.info('——————logger_factory()->handler: %s' % handler)
-    
-    async def logger(request):
+
+    @asyncio.coroutine
+    def logger(request):
         logging.info('Request: %s %s' % (request.method, request.path))
-        return (await handler(request))
+        return (yield from handler(request))
     return logger
 
 #在处理URL请求前，解析出用户信息并绑定到request中
-async def auth_factory(app, handler):
-    async def auth(request):
+@asyncio.coroutine
+def auth_factory(app, handler):
+    @asyncio.coroutine
+    def auth(request):
         logging.info('check user: %s %s' % (request.method, request.path))
         request.__user__ = None
         cookie_str = request.cookies.get(COOKIE_NAME)
         #若存在cookie，解析用户信息
         if cookie_str:
-            user = await cookie2user(cookie_str)
+            user = yield from cookie2user(cookie_str)
             #若有用户信息，将其息绑定到request中，没有则表明cookie是伪造的
             if user:
                 logging.info('set current user: %s' % user.email)
@@ -82,27 +86,31 @@ async def auth_factory(app, handler):
         #若请求路径是管理页面，但用户信息不存在或拥有管理员权限，则无法操作，跳转到登录页面
         if request.path.startswith('/manage/') and (request.__user__ is None or request.__user__.admin):
             return web.HTTPFound('/signin')
-        return (await handler(request))
+        return (yield from handler(request))
     return auth
 
 #在处理URL请求前，将消息主体内容记录下来
-async def data_factory(app, handler):
-    async def parse_data(request):
+@asyncio.coroutine
+def data_factory(app, handler):
+    @asyncio.coroutine
+    def parse_data(request):
         if request.method == 'POST':
             if request.content_type.startswith('application/json'):
-                request.__data__ = await request.json()
+                request.__data__ = yield from request.json()
                 logging.info('request json: %s' % str(request.__data__))
             elif request.content_type.startswith('application/x-www-form-urlencoded'):
-                request.__data__ = await request.post()
-                logging.info('request.form: %s' % str(request.__data__))
-        return (await handler(request))
+                request.__data__ = yield from request.post()
+                logging.info('request form: %s' % str(request.__data__))
+        return (yield from handler(request))
     return parse_data
 
 #在处理完URL请求后，将响应结果转换成web.Response返回
-async def response_factory(app, handler):
-    async def response(request):
+@asyncio.coroutine
+def response_factory(app, handler):
+    @asyncio.coroutine
+    def response(request):
         logging.info('Response handler...')
-        r = await handler(request)
+        r = yield from handler(request)
         #StreamResponse是aiohttp的HTTP响应基类，web.Response继承于此，因此直接返回
         if isinstance(r, web.StreamResponse):
             return r
@@ -163,7 +171,7 @@ def datetime_filter(t):
     if delta < 3600:
         return u'%s分钟前' % (delta // 60)
     if delta < 86400:
-        return u'%s小时前' % (delta //3600)
+        return u'%s小时前' % (delta // 3600)
     if delta < 604800:
         return u'%s天前' % (delta // 86400)
     #若创建日期太早，就返回日期，2000年1月1日
@@ -173,8 +181,9 @@ def datetime_filter(t):
     
     return u'%s年%s月%s日' % (dt.year, dt.month, dt.day)
 
-async def init(loop):
-    await orm.create_pool(loop=loop, user='www-data', password='www-data', db='awesome')
+@asyncio.coroutine
+def init(loop):
+    yield from orm.create_pool(loop=loop, **configs.db)
     #创建web应用，循环类型为消息循环
     app = web.Application(loop=loop, middlewares=[
         logger_factory, auth_factory, response_factory
@@ -185,7 +194,7 @@ async def init(loop):
     #添加静态文件
     add_static(app)
     #创建TCP服务器
-    srv = await loop.create_server(app.make_handler(), '127.0.0.1', 9000)         #创建TCP服务
+    srv = yield from loop.create_server(app.make_handler(), '127.0.0.1', 9000)         #创建TCP服务
     logging.info('server started at http://127.0.0.1:9000...')
     return srv
 
