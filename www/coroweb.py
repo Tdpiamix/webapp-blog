@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 
 '''aiohttp框架相对底层，因此重新封装一个web框架，
-   减少编写的代码数量，且便于单独测试
-'''
+   减少编写的代码数量，且便于单独测试'''
 
 import asyncio, os, inspect, logging, functools
 
@@ -126,23 +125,24 @@ class RequestHandler(object):
 
     #定义__call__()方法后，可将其实例视为函数
     #即x(arg1, arg2...)等同于调用x.__call__(self, arg1, arg2)
-    async def __call__(self, request):
+    @asyncio.coroutine
+    def __call__(self, request):
         kw = None
         #不知道为什么有self._has_named_kw_args还要self._required_kw_args
         if self._has_var_kw_arg or self._has_named_kw_args or self._required_kw_args:
             if request.method == 'POST':
                 #检查请求中是否包含消息主体类型
                 if not request.content_type:
-                    return web.HTTPBadRequest('Missing Content-Type')
+                    return web.HTTPBadRequest('Missing Content-Type.')
                 ct = request.content_type.lower()
                 #检查消息主体是否是JSON对象
                 if ct.startswith('application/json'):
                     #request.json()作用是读取request body, 并进行解码
-                    params = await request.json()
+                    params = yield from request.json()
                     #判断JSON对象格式是否正确
                     #JSON的object类型解码后为Python的dict类型
                     if not isinstance(params, dict):
-                        return web.HTTPBadRequest('JSON body must be object')
+                        return web.HTTPBadRequest('JSON body must be object.')
                     kw = params
                     
                     logging.info('——————RequestHandler()->JSON->kw: %s' % kw)
@@ -150,7 +150,7 @@ class RequestHandler(object):
                 #检查消息主体是否是表单信息
                 elif ct.startswith('application/x-www-form-urlencoded') or ct.startswith('multipart/form-data'):
                     #request.post()从request body读取POST参数,即表单信息
-                    params = await request.post()
+                    params = yield from request.post()
                     kw = dict(**params)
 
                     logging.info('——————RequestHandler()->x-www-form-urlencoded->kw: %s' % kw)
@@ -199,7 +199,7 @@ class RequestHandler(object):
                     return web.HTTPBadRequest('Missing argument: %s' % name)
         logging.info('call with args: %s' % str(kw))
         try:
-            r = await self._func(**kw)
+            r = yield from self._func(**kw)
             return r
         except APIError as e:
             return dict(error=e.error, data=e.data, message=e.message)
@@ -215,7 +215,7 @@ def add_route(app, fn):
     method = getattr(fn, '__method__', None)
     path = getattr(fn, '__route__', None)
     if path is None or method is None:
-        raise ValueError('@get or @post not defined in %s.' % str(fn))
+        raise ValueError('@get or @post not defined in %s' % str(fn))
     #若函数既不是协程也不是生成器，则将其变成协程
     if not asyncio.iscoroutinefunction(fn) and not inspect.isgeneratorfunction(fn):
         #这里检测的是是否通过@asyncio.coroutine装饰得到的生成器，async def定义的结果为False，不知道为什么
@@ -256,9 +256,3 @@ def add_routes(app, module_name):
             path = getattr(fn, '__route__', None)
             if method and path:
                 add_route(app, fn)
-                
-        
-        
-                  
-                    
-    
