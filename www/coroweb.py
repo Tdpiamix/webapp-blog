@@ -84,11 +84,12 @@ def has_request_arg(fn):
     found = False
     for name, param in params.items():
         if name == 'request':
-            found =True
+            found = True
             continue
         #找到名为的request形参后，判断下一个形参类型
-        #request必须是最后一个指定的形参？？？
+        #下一个形参不能是POSITIONAL_OR_KEYWORD，不懂为什么要绕一圈
         if found and (param.kind != inspect.Parameter.VAR_POSITIONAL and param.kind != inspect.Parameter.KEYWORD_ONLY and param.kind != inspect.Parameter.VAR_KEYWORD):
+            #这句也不理解，last named parameter是指最后一个命名的参数？最后一个指定的参数？
             raise ValueError('request parameter must be the last named parameter in function: %s%s' % (fn.__name__, str(sig)))
     return found
 
@@ -111,7 +112,7 @@ class RequestHandler(object):
         #直接拼接会报错，logging内部错误，占位符合提供的参数数量不等，但信息仍会以
         #Message: '——————RequestHandler()->self._named_kw_args:'
         #Arguments: ('email,passwd',)
-        #形式打印出来
+        #的形式打印出来
         if self._named_kw_args:
             print('——————RequestHandler()->self._named_kw_args:', self._named_kw_args)
         if self._required_kw_args:
@@ -137,10 +138,10 @@ class RequestHandler(object):
                 ct = request.content_type.lower()
                 #检查消息主体是否是JSON对象
                 if ct.startswith('application/json'):
-                    #request.json()作用是读取request body, 并进行解码
+                    #对JSON对象进行反序列化
                     params = yield from request.json()
                     #判断JSON对象格式是否正确
-                    #JSON的object类型解码后为Python的dict类型
+                    #JSON的object类型对应Python的dict类型
                     if not isinstance(params, dict):
                         return web.HTTPBadRequest('JSON body must be object.')
                     kw = params
@@ -164,13 +165,12 @@ class RequestHandler(object):
                 if qs:
                     kw = dict()
                     #parse.parse_qs()，以字典形式返回查询字符串中的数据，'True'表示保留空白字符串
-                    #返回字典的值是一个列表，将其第一个元素与变量名重组
 
                     logging.info('——————RequestHandler()->parse.parse_qs(): %s' % parse.parse_qs(qs, True))
 
                     for k, v in parse.parse_qs(qs, True).items():
                         kw[k] = v[0]
-        #经过以上处理，kw仍为空,则获取请求的抽象匹配信息
+        #经过以上处理，kw仍为空,则获取地址解析中的抽象匹配信息
         #不知道具体是什么，大概是根据URL参数返回文本
         if kw is None:
             kw = dict(**request.match_info)
@@ -179,20 +179,20 @@ class RequestHandler(object):
             
         else:
             if not self._has_var_kw_arg and self._named_kw_args:
-                #移除所有未指定的参数
+                #将不需要的参数从kw中移除，只保留传入的参数
                 copy = dict()
                 for name in self._named_kw_args:
                     if name in kw:
                         copy[name] = kw[name]
-                kw =copy
-            #检查指定参数
+                kw = copy
+            #检查并更新参数
             for k, v in request.match_info.items():
                 if k in kw:
                      logging.warning('Duplicate arg name in named arg and kw args: %s' % k)
                 kw[k] = v
         if self._has_request_arg:
             kw['request'] = request
-        #check required kw
+        #检查是否有传入的默认值为空的KEYWORD_ONLY参数
         if self._required_kw_args:
             for name in self._required_kw_args:
                 if not name in kw:
@@ -218,33 +218,25 @@ def add_route(app, fn):
         raise ValueError('@get or @post not defined in %s' % str(fn))
     #若函数既不是协程也不是生成器，则将其变成协程
     if not asyncio.iscoroutinefunction(fn) and not inspect.isgeneratorfunction(fn):
-        #这里检测的是是否通过@asyncio.coroutine装饰得到的生成器，async def定义的结果为False，不知道为什么
-        logging.info('——————add_route()-> not coroutine function')
-
+        #这里检测的是是否通过@asyncio.coroutine标记得到的协程，async def定义的结果为False
         fn = asyncio.coroutine(fn)
-    logging.info('add route %s %s => %s(%s)' % (method, path, fn.__name__, ','.join(inspect.signature(fn).parameters.keys())))
+    logging.info('add route %s %s => %s(%s)' % (method, path, fn.__name__, ', '.join(inspect.signature(fn).parameters.keys())))
     #注册URL处理函数
     app.router.add_route(method, path, RequestHandler(app, fn))
 
 #把多次URL处理函数的注册，变成自动扫描注册
 def add_routes(app, module_name):
-
-    logging.info('——————add_routes()->module_name: %s' % module_name)
-
     #rfind()，返回字符串最后一次出现的位置，如果没有匹配项则返回-1
     n = module_name.rfind('.')
-    #若未匹配到，即module_name在当前目录下，直接导入
+    #若未匹配到，则module_name在当前目录下，直接导入
     #__import__(module_name, globals(), locals(), [name])相当于from module_name import name
     if n == (-1):
         mod = __import__(module_name, globals(), locals())
     else:
         #将'.'号后的子模块名赋值给name
         name = module_name[n+1:]
-        #为什么要getattr()?
+        #为什么还要getattr()？
         mod = getattr(__import__(module_name[:n], globals(), locals(), [name]), name)
-
-        logging.info('——————add_routes()->mod: %s' % mod)
-        
     for attr in dir(mod):
         #排除私有属性
         if attr.startswith('_'):
