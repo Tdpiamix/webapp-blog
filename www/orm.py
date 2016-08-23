@@ -17,7 +17,7 @@ def create_pool(loop, **kw):
     logging.info('create database connection pool...')
     #连接池储存于全局变量__pool中
     global __pool
-    __pool = yield from aiomysql.create_pool( 
+    __pool = yield from aiomysql.create_pool(
         host=kw.get('host', 'localhost'),    #数据库服务器地址，默认设在本地
         port=kw.get('port', 3306),    #数据库端口， 默认为3306
         user=kw['user'],    #登录名 
@@ -30,28 +30,37 @@ def create_pool(loop, **kw):
         loop=loop
     )
 
+#Python3.5引入了新的语法async和await，用于简化@asyncio.coroutine和yield from
+#之所以不使用，因为URL处理函数统一用@asyncio.coroutine标记成协程
+#而yield from表达式接受的对象是一般的生成器    
+#因此在URL处理函数中调用诸如User.findAll()时，如果findAll方法是用async def定义，就会出问题
+#cannot 'yield from' a coroutine object in a non-coroutine generator
+#另外，这里说URL处理函数是non-coroutine，明明在add_route中标记过了，还在研究中
+#为了统一，就都使用@asyncio.coroutine来标记协程了
+
 #select函数，用于执行SELECT语句
 @asyncio.coroutine
 def select(sql, args, size=None):
     log(sql, args)
     global __pool
-    ########测试async with、yield from、await、__pool########
-    #此处不能直接将yield from用await替换
-    #通过async with语句可以使得Python程序在进入和退出runtime context（即with）时，执行异步调用
+    #若要使用await语法，此处不能直接用await替换yield from，需改为
     #async with __pool.get() as conn:
+    #通过async with语句可以使得Python程序在进入和退出runtime context（即with）时，执行异步调用
+
+    #试了一下，直接替换又可以了，在找原因
     with (yield from __pool) as conn:
         #创建游标，默认以tuple形式返回查询结果，通过aiomysql.DictCursor可使结果以dict形式返回
-        #async with conn.cursor(aiomysql.DictCursor) as cur:
         cur = yield from conn.cursor(aiomysql.DictCursor)
-            #执行SQL语句，SQL语句的占位符是?，而MySQL的占位符是%s，需替换
-            #将args参数添加到SELECT语句中，若没有，则使用默认的SELECT语句
+        #执行SQL语句，SQL语句的占位符是?，而MySQL的占位符是%s，需替换
+        #将args参数添加到SELECT语句中，若没有，则使用默认的SELECT语句
         yield from cur.execute(sql.replace('?', '%s'), args or ())
-            #如果传入size参数，接收size条返回结果行
+        #若有传入size参数，接收size条返回结果行
         if size:
             rs = yield from cur.fetchmany(size)
-            #否则，接收全部的返回结果行
+        #否则，接收全部的返回结果行
         else:
             rs = yield from cur.fetchall()
+        yield from cur.close()
         logging.info('rows returned: %s' % len(rs))
         return rs
 
@@ -59,23 +68,21 @@ def select(sql, args, size=None):
 @asyncio.coroutine
 def execute(sql, args, autocommit=True):
     log(sql)
-    #async with __pool.get() as conn:
     with (yield from __pool) as conn:
         if not autocommit:
-            #begin()是什么意思？
+            #若没有自动提交，则手动开启事务
             yield from conn.begin()
         try:
-            ########测试conn.cursor()########
-            #async with conn.cursor(aiomysql.DictCursor) as cur:
             cur = yield from conn.cursor()
             yield from cur.execute(sql.replace('?', '%s'), args)
-                #获取执行影响的行数
+            #获取执行影响的行数
             affected = cur.rowcount
-            #若没有自动提交，则手动提交事务
+            yield from cur.close()
+            #若执行后没有自动提交，则手动提交事务
             if not autocommit:
                 yield from conn.commit()
         except BaseException as e:
-            #若没有自动提交，则回滚到语句被执行之前
+            #若出错后没有自动提交，则回滚到语句被执行之前
             if not autocommit:
                 yield from conn.rollback()
             raise
@@ -86,7 +93,7 @@ def create_args_string(num):
     L = []
     for n in range(num):
         L.append('?')
-    return ','.join(L)
+    return ', '.join(L)
 
 #Field类，负责保存数据库表的字段名和字段类型
 class Field(object):
@@ -97,8 +104,6 @@ class Field(object):
         self.primary_key = primary_key
         self.default = default
 
-    ########测试删除__str__########
-    #打印信息，不知道为什么要有
     def __str__(self):
         return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type, self.name)
     
@@ -138,12 +143,9 @@ class ModelMetaclass(type):
     #__init__()在创建完对象后调用，对当前类的实例进行初始化,第一个参数self即__new__()返回的实例
     def __new__(cls, name, bases, attrs):
         #排除对Model类本身的修改,其作用是被继承,不存在与数据库表的映射
-        if name =='Model':
+        if name == 'Model':
             return type.__new__(cls, name, bases, attrs)
         #获取数据库表名，若当前类中未定义__table__属性，则将类名作为表名
-
-        #print('——————',attrs.get('__table__', None))
-
         tableName = attrs.get('__table__', None) or name
         logging.info('found model: %s (table: %s)' % (name, tableName))
         mappings = dict()    #创建字典，用于储存类属性与数据库表中列的映射关系
@@ -159,7 +161,6 @@ class ModelMetaclass(type):
                     #若primaryKey值已存在，则主键不止一个，报错
                     if primaryKey:
                         raise RuntimeError('Duplicate primary key for field: %s' % k)
-                    #若primaryKey值为空，则将值赋给primaryKey
                     primaryKey = k
                 #将不是主键的属性储存到fields中
                 else:
@@ -170,16 +171,16 @@ class ModelMetaclass(type):
         #将已存入映射关系字典中的属性从类属性中删除，防止实例属性遮盖类的同名属性，造成运行时错误
         for k in mappings.keys():
             attrs.pop(k)
-        #将fields中的字符串用反引号`括起，防止表名、字段名、数据库名与mysql保留字冲突
+        #将fields中的字符串用反引号`括起，防止执行SQL语句时表名、字段名、数据库名与mysql保留字冲突
         escaped_fields = list(map(lambda f: '`%s`' % f, fields))
         attrs['__mappings__'] = mappings    #将属性和列的映射关系存入类属性中
         attrs['__table__'] = tableName    #存入表名
         attrs['__primary_key__'] = primaryKey    #存入主键属性名
         attrs['__fields__'] = fields    #存入除主键外的属性名
         #构造默认的SELECT, INSERT, UPDATE和DELETE语句，存入类属性中
-        attrs['__select__'] = 'select `%s`, %s from `%s`' % (primaryKey, ','.join(escaped_fields), tableName)
-        attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (tableName, ','.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
-        attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ','.join(map(lambda f:'`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
+        attrs['__select__'] = 'select `%s`, %s from `%s`' % (primaryKey, ', '.join(escaped_fields), tableName)
+        attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
+        attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f:'`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
         attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
         #要得到当前类的实例，应当在当前类中的__new__()方法语句中调用当前类的父类的__new__()方法
         return type.__new__(cls, name, bases, attrs)
@@ -204,24 +205,23 @@ class Model(dict, metaclass=ModelMetaclass):
     def __setattr__(self, key, value):
         self[key] = value
 
-    #实例自身存在key属性时使用此方法,否则会调用__getattr()__方法
-    #获取key属性所对应的值，相当于self.key，若值不存在，返回None
-    #__getattr__()和__setattr__()是针对**kw参数传入的dict的值的获取和设置方法
+    #__getattr__()是针对**kw参数传入的dict的值的获取方法
     #getValue()是针对实例自身属性的获取方法
+    #获取key属性所对应的值，相当于self.key，若值不存在，返回None
     def getValue(self, key):
         return getattr(self, key, None)
 
     #获取key属性所对应的值，若值不存在，返回默认值
     def getValueOrDefault(self, key):
         value = getattr(self, key, None)
-        #若值不存在，则从__mappings__中获取对应属性的默认值
+        #若值不存在，获取对应属性的默认值，如created_at的默认值为time.time
         if value is None:
             field = self.__mappings__[key]
             #若默认值存在，判断其是否可调用，若可调用则将其返回值赋给value，否则直接赋给value
             if field.default is not None:
                 value = field.default() if callable(field.default) else field.default
                 logging.debug('using default value for %s: %s' % (key, str(value)))
-                #将值设置为当前属性的值
+                #将value设置为当前属性的值
                 setattr(self, key, value)
         return value
 
@@ -229,22 +229,13 @@ class Model(dict, metaclass=ModelMetaclass):
     #类方法既可以直接类调用(C.f())，也可以进行实例调用(C().f())
     @classmethod
     #对默认SELECT语句的补充，可实现根据WHERE条件查找
-
-    #此处用@asyncio.coroutine而不是async
-    #因为URL处理函数是统一用@asyncio.coroutine装饰的
-    #其中的yield from对象也必须是通过@asyncio.coroutine装饰的，否则会报错
-    #cannot 'yield from' a coroutine object in a non-coroutine generator
     @asyncio.coroutine
     def findAll(cls, where=None, args=None, **kw):
-        
         sql = [cls.__select__]
         #若有where子句，将'where'字符串和where参数加入SELECT语句
         if where:
             sql.append('where')
             sql.append(where)
-
-            logging.info('——————Model()->findAll()->where: %s' % where)
-             
         if args is None:
             args = []
         #若有orderBy子句，将'order by'字符串和orderBy参数加入SELECT语句
@@ -252,9 +243,6 @@ class Model(dict, metaclass=ModelMetaclass):
         if orderBy:
             sql.append('order by')
             sql.append(orderBy)
-
-            logging.info('——————Model()->findAll()->orderBy: %s' % orderBy)
-            
         #若有limit子句，将'limit'字符串加入SELECT语句
         limit = kw.get('limit', None)
         if limit is not None:
@@ -270,31 +258,19 @@ class Model(dict, metaclass=ModelMetaclass):
                 raise ValueError('Invalid limit value: %s' % str(limit))
         #执行SELECT语句
         rs = yield from select(' '.join(sql), args)
-
-        print('——————Model()->findAll()->rs:', rs)
-
-        #返回查询结果
         return [cls(**r) for r in rs]
+
     #实现根据WHERE条件查找，但返回的是查询结果的数目，适用于SELECT COUNT(*)语句
     @classmethod
     @asyncio.coroutine
-    def findNumber(cls, selectField, where=None, args=None):
-        #selectField参数传入的就是count子句？
-        #_num_又是什么，要查询的列名？
-
-        logging.info('——————Model()->findNumber()->selectField: %s' % selectField)
-        
+    def findNumber(cls, selectField, where=None, args=None):             
         sql = ['select %s _num_ from `%s` ' % (selectField, cls.__table__)]
         if where:
             sql.append('where')
             sql.append(where)
         rs = yield from select(' '.join(sql), args, 1)
-
-        print('——————Model()->findNumber()->rs:', rs)
-
         if len(rs) == 0:
             return None
-        #
         return rs[0]['_num_']
 
     #实现根据主键查找
@@ -302,9 +278,6 @@ class Model(dict, metaclass=ModelMetaclass):
     @asyncio.coroutine
     def find(cls, pk):
         rs = yield from select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
-
-        print('——————Model()->find()->rs:', rs)
-
         if len(rs) == 0:
             return None
         return cls(**rs[0])
