@@ -11,7 +11,6 @@
     <script src="/static/js/vue.min.js"></script>
     <script src="/static/js/awesome.js"></script>
     <script>
-
 $(function() {
     var vmAuth = new Vue({
         el: '#vm',
@@ -38,7 +37,6 @@ $(function() {
         }
     });
 });
-
     </script>
 </head>
 <body class="uk-height-1-1">
@@ -56,11 +54,11 @@ $(function() {
                 <div class="uk-form-row">
                     <div class="uk-form-icon uk-width-1-1">
                         <i class="uk-icon-lock"></i>
-                        <input v-model="passwd" name="passwd" type="password" placeholder="口令" maxlength="50" class="uk-width-1-1 uk-form-large">
+                        <input v-model="passwd" name="passwd" type="password" placeholder="密码" maxlength="50" class="uk-width-1-1 uk-form-large">
                     </div>
                 </div>
                 <div class="uk-form-row">
-                    <button type="submit" class="uk-width-1-1 uk-button uk-button-primary uk-button-large"><i class="uk-icon-sign-in"></i>登录</button>
+                    <button type="submit" class="uk-width-1-1 uk-button uk-button-primary uk-button-large"><i class="uk-icon-sign-in"></i> 登录</button>
                 </div>
             </form>
         </div>
