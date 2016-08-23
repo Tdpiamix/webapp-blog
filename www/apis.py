@@ -10,9 +10,7 @@ class Page(object):
 
     def __init__(self, item_count, page_index=1, page_size=10):
         '''
-        Init Pageination by item_count, page_index and page_size.
-
-        >>> p1= Page(100, 1)
+        >>> p1 = Page(100, 1)
         >>> p1.page_count
         10
         >>> p1.offset
@@ -34,6 +32,7 @@ class Page(object):
         >>> p3.limit
         10
         '''
+        
         #博客总数
         self.item_count = item_count
         #每页能显示的博客数
@@ -61,6 +60,7 @@ class Page(object):
     #__str__方法，使print打印出的实例能显示出内部数据，而不是内存地址
     def __str__(self):
         return 'item_count: %s, page_count: %s, page_index: %s, page_size: %s, offset: %s, limit: %s' % (self.item_count, self.page_count, self.page_index, self.page_size, self.offset, self.limit)
+    
     #使直接打印的实例能显示出内部数据
     __repr__ = __str__
 
@@ -90,7 +90,7 @@ class APIPermissionError(APIError):
     
     def __init__(self, message=''):
         super(APIPermissionError, self).__init__('permission:forbidden', 'permission', message)
-        
-if __name__ =='__main__':
+
+if __name__ == '__main__':
     import doctest
     doctest.testmod()
