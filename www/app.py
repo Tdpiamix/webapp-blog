@@ -42,26 +42,24 @@ def init_jinja2(app, **kw):
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
     logging.info('set jinja2 template path: %s' % path)
-    #设置模板环境
+    #创建模板环境
     #FileSystemLoader(), 从提供的路径中加载模板
     env = Environment(loader=FileSystemLoader(path), **options)
+    #获取传入的过滤器，变量可以在模板中被过滤器修改
     filters = kw.get('filters', None)
     if filters is not None:
         for name, f in filters.items():
-            #将创建日期添加到环境中
+            #将传入的过滤器添加到模板的过滤器中
             env.filters[name] = f
     #将模板环境作为属性添加到app中
     app['__templating__'] = env
 
 #以下三个函数为middleware，是一种拦截器
-#在一个URL被某个函数处理前，可经过middleware改变输入输出
+#在一个URL被某个函数处理前后，可经过middleware改变输入输出
 
 #此函数的作用是在处理URL请求前，将请求方法和路径记录下来
 @asyncio.coroutine
 def logger_factory(app, handler):
-
-    logging.info('——————logger_factory()->handler: %s' % handler)
-
     @asyncio.coroutine
     def logger(request):
         logging.info('Request: %s %s' % (request.method, request.path))
@@ -93,7 +91,7 @@ def auth_factory(app, handler):
 @asyncio.coroutine
 def data_factory(app, handler):
     @asyncio.coroutine
-    def parse_data(request):
+    def parse_data(request):        
         if request.method == 'POST':
             if request.content_type.startswith('application/json'):
                 request.__data__ = yield from request.json()
@@ -104,7 +102,7 @@ def data_factory(app, handler):
         return (yield from handler(request))
     return parse_data
 
-#在处理完URL请求后，将响应结果转换成web.Response返回
+#在处理完URL请求后，将响应结果转换成web.Response对象返回
 @asyncio.coroutine
 def response_factory(app, handler):
     @asyncio.coroutine
@@ -114,17 +112,16 @@ def response_factory(app, handler):
         #StreamResponse是aiohttp的HTTP响应基类，web.Response继承于此，因此直接返回
         if isinstance(r, web.StreamResponse):
             return r
-        #若响应结果为字节流，将其作为body部分返回，并将消息主体类型设置为流类型
+        #若响应结果为字节流，将其作为响应的body部分返回，并将消息主体类型设置为流类型
         if isinstance(r, bytes):
             resp = web.Response(body=r)
             resp.content_type = 'application/octet-stream'
             return resp
         #若响应结果为字符串
         if isinstance(r, str):
-            #若内容为redirect，
+            #若内容为redirect，返回重定向的URL
             #redirect表示重定向，可将浏览器重定向到另一个URL，而不是将内容发送给用户
             if r.startswith('redirect:'):
-                #返回重定向的URL
                 return web.HTTPFound(r[9:])
             #否则，将字符串编码后作为body部分返回
             resp = web.Response(body=r.encode('utf-8'))
@@ -138,26 +135,22 @@ def response_factory(app, handler):
                 resp = web.Response(body=json.dumps(r, ensure_ascii=False, default=lambda o: o.__dict__).encode('utf-8'))
                 resp.content_type = 'application/json;charset=utf-8'
                 return resp
-            #否则，
+            #有模板，调用并用响应字典进行渲染
             else:
                 r['__user__'] = request.__user__
                 resp = web.Response(body=app['__templating__'].get_template(template).render(**r).encode('utf-8'))
                 resp.content_type = 'text/html;charset=utf-8'
                 return resp
-        #r为状态码，如200, 404, 500等
+        #若响应结果为整型，则为状态码，如404, 500等
         if isinstance(r, int) and r >= 100 and r < 600:
-
-            logging.info('——————response_factory()->r,int: %s' % r)
-            
             return web.Response(r)
+        #若响应结果为长度2的元组
         if isinstance(r, tuple) and len(r) == 2:
-
-            logging.info('——————response_factory()->r,tuple: %s' % r)
-
-            #t为状态码，m描述，如200 OK，404 Not Found，500 Internal Server Error等
+            #t为http状态码，m描述
             t, m = r
             if isinstance(t, int) and t >= 100 and t < 600:
                 return web.Response(t, str(m))
+        #默认以字符串形式返回响应结果,设置消息类型为普通文本
         resp = web.Response(body=str(r).encode('utf-8'))
         resp.content_type = 'text/plain;charset=utf-8'
         return resp
@@ -174,20 +167,18 @@ def datetime_filter(t):
         return u'%s小时前' % (delta // 3600)
     if delta < 604800:
         return u'%s天前' % (delta // 86400)
-    #若创建日期太早，就返回日期，2000年1月1日
-    dt = datetime.fromtimestamp(t)
-
-    logging.info('——————datetime_filter()->dt: %s' % dt)
-    
+    #若创建日期太早，就返回具体日期
+    dt = datetime.fromtimestamp(t)    
     return u'%s年%s月%s日' % (dt.year, dt.month, dt.day)
 
 @asyncio.coroutine
 def init(loop):
     yield from orm.create_pool(loop=loop, **configs.db)
-    #创建web应用，循环类型为消息循环
+    #创建Web App，循环类型为消息循环传入拦截器
     app = web.Application(loop=loop, middlewares=[
         logger_factory, auth_factory, response_factory
-    ])  
+    ])
+    #初始化jinja2模板
     init_jinja2(app, filters=dict(datetime=datetime_filter))
     #注册URL处理函数
     add_routes(app, 'handlers')
@@ -198,8 +189,9 @@ def init(loop):
     logging.info('server started at http://127.0.0.1:9000...')
     return srv
 
-loop = asyncio.get_event_loop()    #获取Evenloop
-loop.run_until_complete(init(loop))    #执行coroutine
+#获取Eventloop
+loop = asyncio.get_event_loop()   
+#run_until_complete(future)，运行直到future完成,即接收到返回值后就退出
+loop.run_until_complete(init(loop))
+#run_forever()，运行直到stop()被调用
 loop.run_forever()
-
-#run_until_complete和run_forever?
