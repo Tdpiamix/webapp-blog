@@ -5,6 +5,7 @@
 {% block beforehead %}
 
 <script>
+
 function initVM(data) {
     var vm = new Vue({
         el: '#vm',
@@ -30,6 +31,7 @@ function initVM(data) {
     });
     $('#vm').show();
 }
+
 $(function() {
     getJSON('/api/blogs', {
         page: {{ page_index }}
@@ -41,6 +43,7 @@ $(function() {
         initVM(results);
     });
 });
+
 </script>
 
 {% endblock %}
